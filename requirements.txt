@@ -60,3 +60,7 @@ regex==2026.4.4
 requests==2.32.4
 filelock==3.18.0
 psutil==7.0.0
+
+# ============================== TRACE 数据下载 ================================
+# TRACE benchmark 托管在 Google Drive (不在 GitHub repo 里), setup_env.sh 用 gdown 自动拉取
+gdown>=5.2.0

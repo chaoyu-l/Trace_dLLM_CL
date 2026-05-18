@@ -93,23 +93,25 @@ Trace_Results/
 
 You **don't need to manually download anything** — both TRACE data and model weights are pulled lazily:
 
-- `bash setup_env.sh` → at the end, `git clone --depth 1` TRACE benchmark to `./data/TRACE-Benchmark/` (idempotent).
+- `bash setup_env.sh` → at the end, downloads TRACE benchmark from **Google Drive** (via `gdown`) and unzips to `./data/TRACE-Benchmark/` (idempotent).
 - `bash scripts/run_<model>_5000_e<N>.sh` → at the start, `huggingface-cli download` the model to `./models/<name>/` if `config.json` is missing (idempotent).
 
-Repos used:
+Sources used:
 
-| Resource | HuggingFace / GitHub repo ID |
+| Resource | Source |
 | --- | --- |
-| Dream-7B (diffusion) | `Dream-org/Dream-v0-Instruct-7B` |
-| LLaDA-8B-Instruct (diffusion) | `GSAI-ML/LLaDA-8B-Instruct` |
-| LLaMA-3-8B-Instruct (AR) | `meta-llama/Meta-Llama-3-8B-Instruct` ⚠️ gated, see note |
-| Qwen2.5-7B-Instruct (AR) | `Qwen/Qwen2.5-7B-Instruct` |
-| TRACE benchmark data | `BeyonderXX/TRACE` (GitHub) |
+| Dream-7B (diffusion) | HF: `Dream-org/Dream-v0-Instruct-7B` |
+| LLaDA-8B-Instruct (diffusion) | HF: `GSAI-ML/LLaDA-8B-Instruct` |
+| LLaMA-3-8B-Instruct (AR) | HF: `meta-llama/Meta-Llama-3-8B-Instruct` ⚠️ gated, see note |
+| Qwen2.5-7B-Instruct (AR) | HF: `Qwen/Qwen2.5-7B-Instruct` |
+| TRACE benchmark data | Google Drive: [`1S0SmU0WEw5okW_XvP2Ns0URflNzZq6sV`](https://drive.google.com/file/d/1S0SmU0WEw5okW_XvP2Ns0URflNzZq6sV/view) |
 
 > ⚠️ **Llama-3 is a gated repo on HuggingFace.** Before the first `run_llama_*.sh`:
 > 1. Accept the license at https://huggingface.co/meta-llama/Meta-Llama-3-8B-Instruct
 > 2. `huggingface-cli login` and paste your HF token
 > The other 3 models are open and download with no login.
+
+> 💡 **If `setup_env.sh` can't reach Google Drive** (network restrictions / quota), download the TRACE zip manually from the link above and unzip to `./data/TRACE-Benchmark/` so `./data/TRACE-Benchmark/LLM-CL-Benchmark_5000/` exists. The script will then skip the download step on next run.
 
 ## Quick start
 

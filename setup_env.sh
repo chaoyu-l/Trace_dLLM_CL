@@ -61,36 +61,68 @@ if torch.cuda.is_available():
 PY
 
 # =============================================================================
-# TRACE benchmark 数据 (git clone, idempotent)
-#   目标: ./data/TRACE-Benchmark/LLM-CL-Benchmark_{500,1000,5000}/
-#   兼容 TRACE 仓库的两种可能结构 (root 单层 / TRACE-Benchmark 双层),
-#   clone 完成后会把 LLM-CL-Benchmark_* 子目录移到统一位置.
+# TRACE benchmark 数据 (Google Drive, idempotent)
+#   TRACE GitHub repo 里只有代码, 数据托管在 Google Drive:
+#     https://drive.google.com/file/d/1S0SmU0WEw5okW_XvP2Ns0URflNzZq6sV
+#   用 gdown 自动下载 + unzip 到 ./data/TRACE-Benchmark/
 # =============================================================================
 TRACE_DST="${REPO_ROOT}/data/TRACE-Benchmark"
+TRACE_GDRIVE_ID="1S0SmU0WEw5okW_XvP2Ns0URflNzZq6sV"
+
 echo ""
 if [ -d "$TRACE_DST/LLM-CL-Benchmark_5000" ]; then
   echo "[setup_env] TRACE data 已存在: $TRACE_DST/LLM-CL-Benchmark_5000/, 跳过下载"
 else
-  echo "[setup_env] git clone TRACE benchmark -> $TRACE_DST ..."
-  mkdir -p "${REPO_ROOT}/data"
-  TMP_CLONE="$(mktemp -d)"
-  git clone --depth 1 https://github.com/BeyonderXX/TRACE.git "$TMP_CLONE/TRACE"
+  # 确保 gdown 可用 (在 requirements.txt 里, 若用户跳过 pip 装则补一下)
+  if ! python -c "import gdown" 2>/dev/null; then
+    echo "[setup_env] 安装 gdown ..."
+    pip install -q gdown
+  fi
 
-  # 找 LLM-CL-Benchmark_5000 在 clone 出的哪一层
-  if [ -d "$TMP_CLONE/TRACE/LLM-CL-Benchmark_5000" ]; then
-    SRC="$TMP_CLONE/TRACE"
-  elif [ -d "$TMP_CLONE/TRACE/TRACE-Benchmark/LLM-CL-Benchmark_5000" ]; then
-    SRC="$TMP_CLONE/TRACE/TRACE-Benchmark"
+  mkdir -p "${REPO_ROOT}/data"
+  TMP_DIR="$(mktemp -d)"
+  TMP_ZIP="$TMP_DIR/trace_benchmark.zip"
+
+  echo "[setup_env] gdown 下载 TRACE benchmark 从 Google Drive (~80 MB) ..."
+  if python -m gdown "https://drive.google.com/uc?id=$TRACE_GDRIVE_ID" -O "$TMP_ZIP"; then
+    echo "[setup_env] 解压 ..."
+    mkdir -p "$TMP_DIR/extract"
+    unzip -q "$TMP_ZIP" -d "$TMP_DIR/extract"
+    # zip 是 Mac 打的, 清掉 __MACOSX/ 元数据目录避免后续 find 误命中
+    rm -rf "$TMP_DIR/extract/__MACOSX"
+
+    # 找 LLM-CL-Benchmark_5000 在解压出的哪一层
+    FOUND=$(find "$TMP_DIR/extract" -maxdepth 4 -name "LLM-CL-Benchmark_5000" -type d -not -path "*__MACOSX*" 2>/dev/null | head -1)
+    if [ -n "$FOUND" ]; then
+      PARENT="$(dirname "$FOUND")"
+      mkdir -p "$TRACE_DST"
+      mv "$PARENT"/LLM-CL-Benchmark_* "$TRACE_DST/"
+      rm -rf "$TMP_DIR"
+      echo "[setup_env] TRACE data 已就绪: $TRACE_DST/"
+    else
+      echo "[setup_env] ERROR: 解压后找不到 LLM-CL-Benchmark_5000"
+      find "$TMP_DIR/extract" -maxdepth 4 -type d | head -20
+      rm -rf "$TMP_DIR"
+      exit 1
+    fi
   else
-    echo "[setup_env] ERROR: clone 后未找到 LLM-CL-Benchmark_5000"
-    find "$TMP_CLONE" -maxdepth 3 -name "LLM-CL-Benchmark_5000" -type d
-    rm -rf "$TMP_CLONE"
+    rm -rf "$TMP_DIR"
+    cat <<EOF
+
+[setup_env] WARN: gdown 自动下载失败 (Google Drive 配额 / 网络受限 / 需要 cookie 等).
+请手动获取 TRACE 数据:
+  方案 A — 浏览器下载:
+    1. 浏览器打开 https://drive.google.com/file/d/$TRACE_GDRIVE_ID/view
+    2. 下载 zip 包, 解压到 $TRACE_DST/
+    3. 确认 $TRACE_DST/LLM-CL-Benchmark_5000/{train,eval,test}.json 存在
+
+  方案 B — 软链已有数据 (你本机其他位置已有 TRACE):
+    mkdir -p "$(dirname "$TRACE_DST")"
+    ln -s /path/to/existing/TRACE-Benchmark "$TRACE_DST"
+
+EOF
     exit 1
   fi
-  mkdir -p "$TRACE_DST"
-  mv "$SRC"/LLM-CL-Benchmark_* "$TRACE_DST/"
-  rm -rf "$TMP_CLONE"
-  echo "[setup_env] TRACE data 已就绪: $TRACE_DST/"
 fi
 
 echo ""
