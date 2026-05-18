@@ -1,0 +1,62 @@
+# =============================================================================
+# TRACE Continual Learning — requirements.txt
+#
+# 目标环境: CUDA 12.8 + PyTorch 2.8（来自已跑通的远程服务器 pip list）
+# 安装方式:
+#     pip install -r requirements.txt
+#
+# 注意:
+#   1. torch / torchvision 通过 --extra-index-url 从 PyTorch CUDA 12.8 拉取，
+#      会自动带上 nvidia-cublas-cu12 / nvidia-cudnn-cu12 等 wheels，不用手动列。
+#   2. Python 建议 3.10 ~ 3.12（你工作服务器对应这个区间）。
+#   3. 如果某条版本号 PyPI 上没有（极少数 conda-only 版本），
+#      可以临时把 == 改成 >= 让 pip 自找最近能装的。
+# =============================================================================
+
+--extra-index-url https://download.pytorch.org/whl/cu128
+
+# ============================== PyTorch (CUDA 12.8) ==========================
+torch==2.8.0+cu128
+torchvision==0.23.0+cu128
+
+# ============================== HuggingFace 生态 ==============================
+transformers==4.44.2
+tokenizers==0.19.1
+accelerate==1.13.0
+peft==0.18.1
+datasets==4.8.4
+evaluate==0.4.6
+huggingface_hub==0.36.2
+safetensors==0.7.0
+
+# ============================== 训练后端 ======================================
+deepspeed==0.18.4
+ninja==1.11.1.4
+hjson==3.1.0
+einops==0.8.2
+
+# ============================== 数值 / 数据 ===================================
+numpy==2.3.2
+pandas==3.0.2
+tqdm==4.67.1
+
+# ============================== 评估指标 ======================================
+nltk==3.9.4
+jieba==0.42.1
+rouge==1.0.1
+rouge-chinese==1.0.3
+fuzzywuzzy==0.18.0
+python-Levenshtein==0.27.3
+
+# ============================== OpenAI judge =================================
+# evaluations/eval_with_gpt_api.py 用 `from openai import OpenAI` 调 GPT 判分
+# 注: 你的远程 pip list 里没有 openai，需要在新机器上补装
+openai>=1.40
+httpx==0.28.1
+
+# ============================== 通用工具 ======================================
+pyyaml==6.0.2
+regex==2026.4.4
+requests==2.32.4
+filelock==3.18.0
+psutil==7.0.0

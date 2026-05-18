@@ -1,0 +1,167 @@
+# =====================================================================
+# Python / 编译产物
+# =====================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg
+*.egg-info/
+build/
+dist/
+*.so
+.Python
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# =====================================================================
+# 操作系统 / IDE / 编辑器
+# =====================================================================
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.iml
+
+# =====================================================================
+# 虚拟环境
+# =====================================================================
+venv/
+.venv/
+env/
+.env
+ENV/
+
+# =====================================================================
+# Claude Code / AI 工具的本地配置
+# =====================================================================
+.claude/
+CLAUDE.local.md
+
+# git 自身的本地备份目录 (例如 .git.backup_20260519_xxxx, 由清理操作产生)
+.git.backup*/
+.git.backup*
+
+# =====================================================================
+# 实验输出 —— 全部不上传
+#   outputs_*  覆盖所有 outputs_dream_7b_500 / outputs_LLaDA-*
+#              / outputs_Llama-* / outputs_Qwen-* / outputs_LLaDA_py150
+#              / outputs_Llama-8b-LoRA_ssr_* 等
+# =====================================================================
+outputs/
+outputs_*/
+
+# 推理样本 / 重复检测中间结果
+llada_dif_sample/
+llada_new_results/
+
+# 预训练模型权重（仅根目录 models/，不影响 utils/model/）
+/models/
+
+# 数据集（仅根目录 data/，不影响 utils/data/）
+/data/
+
+# 训练时 tokenization 缓存（脚本会自动 rm -rf 重建）
+/data_files/
+
+# 数据探针目录（含数据集副本和 cache）
+data_trainset_probe/
+
+# OpenCompass 通用能力评测产物
+opencompass_test/
+
+# GPT 评测缓存
+.gpt_eval_cache.json
+gpt_eval_cache*.json
+
+# =====================================================================
+# 实验产物 —— 各种二进制 / 报告 / 表格 / 图片
+#   （代码目录里默认不会有这些；放在这里防止误传）
+# =====================================================================
+*.docx
+*.xlsx
+*.xls
+*.pdf
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+*.rar
+
+# 模型权重 / checkpoint
+*.bin
+*.safetensors
+*.pt
+*.pth
+*.ckpt
+*.onnx
+
+# 数据缓存
+*.parquet
+*.arrow
+*.npy
+*.npz
+
+# 图片（loss curve、结果图等）
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+
+# 日志
+*.log
+
+# =====================================================================
+# 根目录文件白名单
+#   根目录有几十个一次性分析/报告脚本，统一用白名单方式管理：
+#   先 ignore 整层 .py / .md / .txt / .json，再 ! 把要保留的反向加回
+# =====================================================================
+
+# ---- 根目录 *.py：默认排除，只保留核心代码 ----
+#      demo_metric_* / recalculate_* 一次性研究脚本本地保留, 不上传 GitHub
+/*.py
+!/calculate_metrics.py
+!/metrics.py
+
+# ---- 根目录 *.md：默认排除，只保留项目说明 ----
+/*.md
+!/README.md
+
+# ---- 根目录 *.txt：默认排除，只保留 requirements.txt ----
+/*.txt
+!/requirements.txt
+
+# ---- 根目录 *.json：全部排除 ----
+/*.json
+
+# =====================================================================
+# scripts/ 默认全部排除，白名单保留 5000 数据集的标准训练/推理脚本
+#   你本地还有 train_ssr_*.sh / test_*.sh / ablation_*.sh 等实验性脚本，
+#   不上传 GitHub
+# =====================================================================
+scripts/*
+# 3 套训练配置 × 4 模型 = 12 个一站式 pipeline (训练 + 推理)
+# 共享: bs=2, grad_accum=8 (有效 batch=16)
+#   _e5:  每任务 5  epoch, 无 in-training eval
+#   _e10: 每任务 10 epoch, 无 in-training eval
+#   _e15: 每任务 15 epoch, 每 2 epoch eval 一次 (50 条 dev)
+!scripts/run_dream_lora_5000_e5.sh
+!scripts/run_llada_8b_5000_e5.sh
+!scripts/run_llama_8b_5000_e5.sh
+!scripts/run_qwen_7b_5000_e5.sh
+!scripts/run_dream_lora_5000_e10.sh
+!scripts/run_llada_8b_5000_e10.sh
+!scripts/run_llama_8b_5000_e10.sh
+!scripts/run_qwen_7b_5000_e10.sh
+!scripts/run_dream_lora_5000_e15.sh
+!scripts/run_llada_8b_5000_e15.sh
+!scripts/run_llama_8b_5000_e15.sh
+!scripts/run_qwen_7b_5000_e15.sh
