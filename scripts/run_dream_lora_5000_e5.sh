@@ -3,7 +3,7 @@
 # run_dream_lora_5000_e5.sh
 #   Dream-7B 一站式 pipeline (配置 A: 5 epoch, 无 in-training eval):
 #     Phase 0: base 推理 (无 LoRA, idempotent skip; 提供 FWT baseline, e10/e15 复用)
-#     Phase 1: 训练 (LoRA, 8 任务, 每任务 5 epoch, dynamic canvas group=128)
+#     Phase 1: 训练 (LoRA, 8 任务, 每任务 5 epoch, dynamic canvas group=4)
 #     Phase 2: 推理 (test 集完整, all_rounds, maskgit_plus, sampling_steps=0)
 # =============================================================================
 set -eo pipefail
@@ -120,7 +120,7 @@ deepspeed --num_gpus=1 --master_port "$port" training/main.py \
   --CL_method "$cl_method" \
   --output_dir "$out_dir" \
   --model_type diffusion \
-  --diffusion_canvas_group_size 128 \
+  --diffusion_canvas_group_size 4 \
   2>&1 | tee "$out_dir/train_full.log"
 
 # =============================================================================
