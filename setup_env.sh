@@ -125,6 +125,24 @@ EOF
   fi
 fi
 
+# =============================================================================
+# 生成 FOMC_shuffled 数据集 (每样本 ABC 随机置换, 破除原 FOMC C-bias)
+#   脚本内部 idempotent: 三个 split 都已存在则 skip
+#   各规模在原 FOMC 旁生成 FOMC_shuffled/ 平级目录
+# =============================================================================
+echo ""
+echo "[setup_env] 生成 FOMC_shuffled (idempotent) ..."
+for size in 500 1000 5000; do
+  size_root="$TRACE_DST/LLM-CL-Benchmark_${size}"
+  if [ -d "$size_root/FOMC" ]; then
+    python "${REPO_ROOT}/preprocess/shuffle_fomc_labels.py" \
+      --src_root "$size_root" --dst_name FOMC_shuffled --seed 1234 \
+      2>&1 | sed 's/^/    /'
+  else
+    echo "  跳过 LLM-CL-Benchmark_${size} (源 FOMC 不存在)"
+  fi
+done
+
 echo ""
 echo "[setup_env] 后续启动方式:"
 echo "  conda activate $ENV_NAME"

@@ -5,7 +5,25 @@
 #     Phase 1: 训练 (LoRA, 8 任务, 每任务 5 epoch)
 #     Phase 2: 推理 (test 集完整, greedy, all_rounds)
 # =============================================================================
-set -e
+set -eo pipefail
+
+# ===== Conda env auto-activate (skip if already active) =====
+TRACE_ENV_NAME="${TRACE_ENV_NAME:-trace_env}"
+if [ "${CONDA_DEFAULT_ENV:-}" != "$TRACE_ENV_NAME" ]; then
+  if ! command -v conda >/dev/null 2>&1; then
+    echo "[run] ERROR: conda not in PATH. Please source your conda profile first." >&2
+    exit 1
+  fi
+  if ! conda env list | awk '{print $1}' | grep -qx "$TRACE_ENV_NAME"; then
+    echo "[run] ERROR: conda env '$TRACE_ENV_NAME' missing." >&2
+    echo "       Run: bash setup_env.sh" >&2
+    exit 1
+  fi
+  # shellcheck source=/dev/null
+  source "$(conda info --base)/etc/profile.d/conda.sh"
+  conda activate "$TRACE_ENV_NAME"
+  echo "[run] activated conda env: $TRACE_ENV_NAME"
+fi
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 MODEL_PATH="./models/Llama-3-8B-Instruct"
