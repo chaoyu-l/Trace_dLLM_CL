@@ -80,8 +80,8 @@ else
       --inference_model_path "$MODEL_PATH" \
       --model_type diffusion \
       --sampling_steps 0 \
-        --sampling_temperature 0.0 \
-        --dream_alg maskgit_plus \
+      --sampling_temperature 0.0 \
+      --dream_alg maskgit_plus \
       --inference_batch 64 \
       --max_prompt_len 1024 \
       --max_ans_len 512 \
