@@ -2,6 +2,7 @@
 # =============================================================================
 # run_llada_8b_5000_e5.sh
 #   LLaDA-8B-Instruct 一站式 pipeline (配置 A: 5 epoch, 无 in-training eval):
+#     Phase 0: base 推理 (无 LoRA, idempotent skip; 提供 FWT baseline, e10/e15 复用)
 #     Phase 1: 训练 (LoRA, 8 任务, 每任务 5 epoch, fix_eos pad)
 #     Phase 2: 推理 (test 集完整, low_confidence remasking, sampling_steps=0)
 #
@@ -56,6 +57,41 @@ if [ ! -f "$MODEL_PATH/config.json" ]; then
   }
 fi
 
+# =============================================================================
+# Phase 0/3: BASE INFERENCE (no LoRA; idempotent; e10/e15 reuse this output)
+# =============================================================================
+BASE_OUT_DIR="./outputs_LLaDA-8b_5000_base/base_metrics"
+if [ -f "$BASE_OUT_DIR/results-0-7-20Minuten.json" ]; then
+  echo "[llada_5000_e5] Phase 0 SKIP: base baseline already at $BASE_OUT_DIR/"
+else
+  mkdir -p "$BASE_OUT_DIR"
+  echo "=========================================================================="
+  echo "[llada_5000_e5] Phase 0/3: BASE INFERENCE (no LoRA, for FWT baseline)"
+  echo "=========================================================================="
+
+  export OMP_NUM_THREADS=4
+  export TOKENIZERS_PARALLELISM=false
+
+  python inference/infer_single.py \
+      --data_path "$DATA_PATH" \
+      --data_output_path "$DATA_CACHE_PATH" \
+      --inference_tasks C-STANCE,FOMC_shuffled,MeetingBank,Py150,ScienceQA,NumGLUE-cm,NumGLUE-ds,20Minuten \
+      --model_name_or_path "$MODEL_PATH" \
+      --inference_model_path "$MODEL_PATH" \
+      --model_type diffusion \
+      --sampling_steps 0 \
+      --sampling_temperature 0.0 \
+      --remasking_strategy low_confidence \
+      --inference_batch 64 \
+      --max_prompt_len 1024 \
+      --max_ans_len 512 \
+      --seed 1234 \
+      --CL_method base \
+      --inference_output_path "$BASE_OUT_DIR" \
+      --target_round 0 \
+      2>&1 | tee "$BASE_OUT_DIR/infer_base.log"
+fi
+
 echo "=========================================================================="
 echo "[run_llada_5000_e5] Phase 1/2: TRAINING (LLaDA-8B, 5 epoch x 8 tasks, no eval)"
 echo "=========================================================================="
@@ -65,7 +101,7 @@ deepspeed --num_gpus=1 --master_port "$port" training/main.py \
   --data_output_path "$DATA_CACHE_PATH" \
   --dataset_name C-STANCE,FOMC_shuffled,MeetingBank,Py150,ScienceQA,NumGLUE-cm,NumGLUE-ds,20Minuten \
   --model_name_or_path "$MODEL_PATH" \
-  --per_device_train_batch_size 2 \
+  --per_device_train_batch_size 16 \
   --max_prompt_len 1024 \
   --max_ans_len 512 \
   --learning_rate 1e-4 \
@@ -101,7 +137,7 @@ python inference/infer_single.py \
     --sampling_steps 0 \
     --sampling_temperature 0.0 \
     --remasking_strategy low_confidence \
-    --inference_batch 4 \
+    --inference_batch 64 \
     --max_prompt_len 1024 \
     --max_ans_len 512 \
     --seed 1234 \

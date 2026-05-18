@@ -121,7 +121,7 @@ Each `run_<model>_5000_e<N>.sh` is a **one-shot pipeline**: it trains all 8 task
 
 ### Three training configurations
 
-All 3 configs share `bs=2`, `grad_accum=8` (effective batch = 16). The only differences are epoch count and whether in-training eval is enabled:
+All 3 configs share `per_device_train_batch_size=16`, `gradient_accumulation_steps=8` (**effective batch = 128**, tuned for an 80-141 GB GPU such as H100/H200). The only differences are epoch count and whether in-training eval is enabled:
 
 | Suffix | Epochs/task | In-training eval |
 | --- | --- | --- |
@@ -129,7 +129,9 @@ All 3 configs share `bs=2`, `grad_accum=8` (effective batch = 16). The only diff
 | `_e10` | 10 | none |
 | `_e15` | 15 | every 2 epochs (50 dev samples → `epoch_eval.json`) |
 
-Everything else is identical across all 3 configs and all 4 models: `lr=1e-4`, `seed=1234`, `bf16`, `zero_stage=2`, `max_prompt_len=1024`, `max_ans_len=512`, `inference_batch=4`, deterministic greedy inference (`temperature=0.0`). Diffusion variants use `sampling_steps=0` (auto-scaled to `max_ans_len`); Dream uses `dream_alg=maskgit_plus`, LLaDA uses `remasking_strategy=low_confidence`. Architectural exceptions: LLaDA skips `--gradient_checkpointing`; diffusion backbones add `--fix_eos`.
+Everything else is identical across all 3 configs and all 4 models: `lr=1e-4`, `seed=1234`, `bf16`, `zero_stage=2`, `max_prompt_len=1024`, `max_ans_len=512`, `inference_batch=64` (Phase 0 + Phase 2; tuned for H100/H200), deterministic greedy inference (`temperature=0.0`). Diffusion variants use `sampling_steps=0` (auto-scaled to `max_ans_len`); Dream uses `dream_alg=maskgit_plus`, LLaDA uses `remasking_strategy=low_confidence`. Architectural exceptions: LLaDA skips `--gradient_checkpointing`; diffusion backbones add `--fix_eos`.
+
+> **GPU memory budgeting**: at `train_bs=16 / grad_accum=8` and `inference_batch=64`, peak training memory is ~70 GB and peak inference memory is ~70 GB (LLaDA without `gradient_checkpointing` is the tightest case but fits in 141 GB). On smaller GPUs (24 GB RTX 4090, 80 GB A100/H100): drop `per_device_train_batch_size` to 1-2 and `inference_batch` to 4-16.
 
 ### Run a single (model, config) end-to-end
 
@@ -150,12 +152,17 @@ bash scripts/run_dream_lora_5000_e15.sh
 ```
 
 Each script does:
-1. **Train** — writes adapters to `outputs_<model>_5000_e<N>/lora_<size>/{0..7}/` (one per task) plus `train_full.log`. Only `_e15` also writes convergence metrics to `epoch_eval.json` (at epochs 2, 4, 6, …, 14).
-2. **Infer** — full test-set pass on all rounds, writes `outputs_<model>_5000_e<N>/lora_<size>/predictions/results-<round>-<task_idx>-<task>.json`.
+- **Phase 0** *(only `_e5`)* — base model inference (no LoRA, `target_round=0`) on full test set; writes `outputs_<model>_5000_base/base_metrics/results-0-<task_idx>-<task>.json`. **Idempotent**: if `base_metrics/` already exists, this phase is skipped. `_e10` and `_e15` reuse the same baseline (re-running `_e5` is not required as long as `outputs_<model>_5000_base/` is present).
+- **Phase 1** — 8-task continual LoRA training; writes adapters to `outputs_<model>_5000_e<N>/lora_<size>/{0..7}/` (one per task) plus `train_full.log`. Only `_e15` also writes convergence metrics to `epoch_eval.json` (at epochs 2, 4, 6, …, 14) and per-epoch predictions to `epoch_predictions/<task_idx>/`.
+- **Phase 2** — LoRA full test-set inference on all rounds; writes `outputs_<model>_5000_e<N>/lora_<size>/predictions/results-<round>-<task_idx>-<task>.json`.
 
-Per-model output directory structure (config `_e15`):
+Per-model output (config `_e15`, after running `_e5` once for base baseline):
 ```
-outputs_<model>_5000_e<N>/lora_<size>/
+outputs_<model>_5000_base/                           ★ produced by Phase 0 in run_*_e5.sh (shared)
+└── base_metrics/
+    └── results-0-<task_idx>-<task>.json             8 files, base model zero-shot
+
+outputs_<model>_5000_e15/lora_<size>/
 ├── {0..7}/                                          task-end LoRA adapters (1 per task)
 ├── train_full.log
 ├── epoch_eval.json                                  ★ convergence summary {task: {epoch: metrics}}
@@ -170,11 +177,16 @@ outputs_<model>_5000_e<N>/lora_<size>/
     └── results-<round>-<task_idx>-<task>.json
 ```
 
+> Recommended order: run `_e5` first for each model (produces the shared `_base/` directory used as FWT baseline), then `_e10` and/or `_e15` skip Phase 0 automatically.
+
 ### Aggregate final TRACE metrics (AP / BWT / FWT)
 
 ```bash
-python calculate_metrics.py --output_dir outputs_<model>_5000_e<N>
+python calculate_metrics.py \
+    --output_dir outputs_<model>_5000_e<N> \
+    --base_dir   outputs_<model>_5000_base/base_metrics
 ```
+`--base_dir` provides the zero-shot baseline rows for **Forward Transfer** computation; if omitted, AP/BWT still work but FWT will be NaN.
 
 For free-form generation tasks (summarization, code), the LLM-judge path lives in `evaluations/eval_with_gpt_api.py` (requires `OPENAI_API_KEY`).
 
