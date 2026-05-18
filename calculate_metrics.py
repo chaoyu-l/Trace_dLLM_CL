@@ -7,7 +7,13 @@ from datetime import datetime
 
 # ================= 配置区域 =================
 # 任务顺序 (必须与训练顺序一致)
+# 注: scripts/run_*.sh 用 FOMC_shuffled (per-sample ABC 置换版, 消除 FOMC 原 C-bias).
+#     如果你的输出来自旧的原始 FOMC 训练 (如 outputs_*_500/), 加 --task_order trace_orig 切换.
 TASK_ORDER_TRACE = [
+    "C-STANCE", "FOMC_shuffled", "MeetingBank", "Py150",
+    "ScienceQA", "NumGLUE-cm", "NumGLUE-ds", "20Minuten"
+]
+TASK_ORDER_TRACE_ORIG = [
     "C-STANCE", "FOMC", "MeetingBank", "Py150",
     "ScienceQA", "NumGLUE-cm", "NumGLUE-ds", "20Minuten"
 ]
@@ -22,7 +28,8 @@ TASK_ORDER = TASK_ORDER_TRACE
 
 # 定义哪些任务原本是 0-1 小数，需要乘以 100 转为百分制（仅 TRACE）
 SCALE_TO_100_TASKS = {
-    "C-STANCE", "FOMC", "MeetingBank", "ScienceQA", "NumGLUE-cm", "NumGLUE-ds"
+    "C-STANCE", "FOMC", "FOMC_shuffled",
+    "MeetingBank", "ScienceQA", "NumGLUE-cm", "NumGLUE-ds"
 }
 
 # SSR 分类任务（sa/pos）可在 rouge-l / accuracy 之间切换，由 --sa_pos_metric 控制
@@ -146,6 +153,18 @@ def main():
     sa_pos_metric = args.sa_pos_metric
 
     task_order = TASK_ORDER_SSR if benchmark == "ssr" else TASK_ORDER_TRACE
+
+    # Auto-detect FOMC vs FOMC_shuffled by inspecting actual filenames in pred_dir.
+    # 默认 TASK_ORDER_TRACE 写的是 FOMC_shuffled (scripts/run_*.sh 用的);
+    # 若 pred_dir 实际只有 *-1-FOMC.json (原始 FOMC 训练产物), 自动切回 TASK_ORDER_TRACE_ORIG.
+    if benchmark == "trace" and os.path.isdir(pred_dir):
+        import glob
+        has_shuffled = bool(glob.glob(os.path.join(pred_dir, "*-1-FOMC_shuffled.json")))
+        has_orig = bool(glob.glob(os.path.join(pred_dir, "results-*-1-FOMC.json")))
+        if has_orig and not has_shuffled:
+            task_order = TASK_ORDER_TRACE_ORIG
+            print(f"[INFO] auto-detected original FOMC (no _shuffled files in {pred_dir})")
+
     # 向后兼容：让后续代码里裸用的 TASK_ORDER 也跟随 benchmark
     globals()["TASK_ORDER"] = task_order
     n_tasks = len(task_order)
