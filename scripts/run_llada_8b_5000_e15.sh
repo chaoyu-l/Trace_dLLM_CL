@@ -2,7 +2,7 @@
 # =============================================================================
 # run_llada_8b_5000_e15.sh
 #   LLaDA-8B-Instruct 一站式 pipeline (配置 C: 15 epoch, 每 2 epoch eval):
-#     Phase 1: 训练 (LoRA, 8 任务, 每任务 15 epoch, fix_eos pad)
+#     Phase 1: 训练 (LoRA, 8 任务, 每任务 15 epoch, dynamic canvas group=128)
 #              eval 在 epoch 2,4,6,...,14 末尾 (dev 前 50 条) -> epoch_eval.json
 #     Phase 2: 推理 (test 集完整, low_confidence remasking, sampling_steps=0)
 #
@@ -81,7 +81,7 @@ deepspeed --num_gpus=1 --master_port "$port" training/main.py \
   --CL_method "$cl_method" \
   --output_dir "$out_dir" \
   --model_type diffusion \
-  --fix_eos \
+  --diffusion_canvas_group_size 128 \
   --do_eval \
   --eval_max_samples 50 \
   --eval_every_n_epochs 2 \

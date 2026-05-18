@@ -3,7 +3,7 @@
 # run_llada_8b_5000_e5.sh
 #   LLaDA-8B-Instruct 一站式 pipeline (配置 A: 5 epoch, 无 in-training eval):
 #     Phase 0: base 推理 (无 LoRA, idempotent skip; 提供 FWT baseline, e10/e15 复用)
-#     Phase 1: 训练 (LoRA, 8 任务, 每任务 5 epoch, fix_eos pad)
+#     Phase 1: 训练 (LoRA, 8 任务, 每任务 5 epoch, dynamic canvas group=128)
 #     Phase 2: 推理 (test 集完整, low_confidence remasking, sampling_steps=0)
 #
 #   注意: LLaDA 不能加 --gradient_checkpointing (架构限制)
@@ -116,7 +116,7 @@ deepspeed --num_gpus=1 --master_port "$port" training/main.py \
   --CL_method "$cl_method" \
   --output_dir "$out_dir" \
   --model_type diffusion \
-  --fix_eos \
+  --diffusion_canvas_group_size 128 \
   2>&1 | tee "$out_dir/train_full.log"
 
 export OMP_NUM_THREADS=4
