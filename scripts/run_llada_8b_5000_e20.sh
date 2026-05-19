@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # =============================================================================
-# run_llada_8b_5000_e15.sh
-#   LLaDA-8B-Instruct 一站式 pipeline (配置 C: 15 epoch, 每 2 epoch eval):
-#     Phase 1: 训练 (LoRA, 8 任务, 每任务 15 epoch, dynamic canvas group=4)
-#              eval 在 epoch 2,4,6,...,14 末尾 (dev 前 50 条) -> epoch_eval.json
+# run_llada_8b_5000_e20.sh
+#   LLaDA-8B-Instruct 一站式 pipeline (配置 D: 20 epoch, 每 2 epoch eval):
+#     任务子集 (order1, 去掉 C-STANCE/NumGLUE-ds/20Minuten):
+#       FOMC_shuffled -> MeetingBank -> Py150 -> ScienceQA -> NumGLUE-cm
+#     Phase 1: 训练 (LoRA, 5 任务, 每任务 20 epoch, dynamic canvas group=4)
+#              eval 在 epoch 2,4,...,20 末尾 (dev 前 50 条) -> epoch_eval.json
 #     Phase 2: 推理 (test 集完整, low_confidence remasking, sampling_steps=0)
 #
 #   注意: LLaDA 不能加 --gradient_checkpointing (架构限制)
@@ -32,8 +34,11 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 MODEL_PATH="./models/LLaDA-8B-Instruct"
 DATA_PATH="./data/TRACE-Benchmark/LLM-CL-Benchmark_5000"
 DATA_CACHE_PATH="./data_files"
-out_dir="./outputs_LLaDA-8b-LoRA_5000_e15/lora_8b"
+out_dir="./outputs_LLaDA-8b-LoRA_5000_e20/lora_8b"
 PRED_OUTPUT="${out_dir}/predictions"
+
+# order1 子集 (5 任务)
+TASK_LIST="FOMC_shuffled,MeetingBank,Py150,ScienceQA,NumGLUE-cm"
 
 cl_method="lora"
 port=$(shuf -i25000-30000 -n1)
@@ -58,21 +63,21 @@ if [ ! -f "$MODEL_PATH/config.json" ]; then
 fi
 
 echo "=========================================================================="
-echo "[run_llada_5000_e15] Phase 1/2: TRAINING (LLaDA-8B, 15 epoch x 8 tasks, eval every 2)"
+echo "[run_llada_5000_e20] Phase 1/2: TRAINING (LLaDA-8B, 20 epoch x 5 tasks, eval every 2)"
 echo "=========================================================================="
 
 deepspeed --num_gpus=1 --master_port "$port" training/main.py \
   --data_path "$DATA_PATH" \
   --data_output_path "$DATA_CACHE_PATH" \
-  --dataset_name C-STANCE,FOMC_shuffled,MeetingBank,Py150,ScienceQA,NumGLUE-cm,NumGLUE-ds,20Minuten \
+  --dataset_name "$TASK_LIST" \
   --model_name_or_path "$MODEL_PATH" \
-  --per_device_train_batch_size 16 \
+  --per_device_train_batch_size 32 \
   --max_prompt_len 1024 \
   --max_ans_len 512 \
   --learning_rate 1e-4 \
   --weight_decay 0. \
-  --num_train_epochs 15,15,15,15,15,15,15,15 \
-  --gradient_accumulation_steps 8 \
+  --num_train_epochs 20,20,20,20,20 \
+  --gradient_accumulation_steps 4 \
   --seed 1234 \
   --zero_stage 2 \
   --bf16 \
@@ -92,20 +97,20 @@ export TOKENIZERS_PARALLELISM=false
 
 echo ""
 echo "=========================================================================="
-echo "[run_llada_5000_e15] Phase 2/2: INFERENCE (test split, all rounds)"
+echo "[run_llada_5000_e20] Phase 2/2: INFERENCE (test split, all rounds)"
 echo "=========================================================================="
 
 python inference/infer_single.py \
     --data_path "$DATA_PATH" \
     --data_output_path "$DATA_CACHE_PATH" \
-    --inference_tasks C-STANCE,FOMC_shuffled,MeetingBank,Py150,ScienceQA,NumGLUE-cm,NumGLUE-ds,20Minuten \
+    --inference_tasks "$TASK_LIST" \
     --model_name_or_path "$MODEL_PATH" \
     --inference_model_path "$out_dir" \
     --model_type diffusion \
     --sampling_steps 0 \
     --sampling_temperature 0.0 \
     --remasking_strategy low_confidence \
-    --inference_batch 64 \
+    --inference_batch 128 \
     --max_prompt_len 1024 \
     --max_ans_len 512 \
     --seed 1234 \
@@ -115,6 +120,6 @@ python inference/infer_single.py \
     2>&1 | tee "$PRED_OUTPUT/infer_llada.log"
 
 echo ""
-echo "[run_llada_5000_e15] All done."
+echo "[run_llada_5000_e20] All done."
 echo "  Convergence curves: $out_dir/epoch_eval.json"
 echo "  Final test metrics: $PRED_OUTPUT/results-*.json"

@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # =============================================================================
-# run_llama_8b_5000_e10.sh
-#   LLaMA-3-8B-Instruct 一站式 pipeline (配置 B: 10 epoch, 无 in-training eval):
-#     Phase 1: 训练 (LoRA, 8 任务, 每任务 10 epoch)
+# run_qwen_7b_5000_e20.sh
+#   Qwen2.5-7B-Instruct 一站式 pipeline (配置 D: 20 epoch, 每 2 epoch eval):
+#     任务子集 (order1, 去掉 C-STANCE/NumGLUE-ds/20Minuten):
+#       FOMC_shuffled -> MeetingBank -> Py150 -> ScienceQA -> NumGLUE-cm
+#     Phase 1: 训练 (LoRA, 5 任务, 每任务 20 epoch)
+#              eval 在 epoch 2,4,...,20 末尾 (dev 前 50 条) -> epoch_eval.json
 #     Phase 2: 推理 (test 集完整, greedy, all_rounds)
 # =============================================================================
 set -eo pipefail
@@ -26,11 +29,14 @@ if [ "${CONDA_DEFAULT_ENV:-}" != "$TRACE_ENV_NAME" ]; then
 fi
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-MODEL_PATH="./models/Llama-3-8B-Instruct"
+MODEL_PATH="./models/Qwen2.5-7B-Instruct"
 DATA_PATH="./data/TRACE-Benchmark/LLM-CL-Benchmark_5000"
 DATA_CACHE_PATH="./data_files"
-out_dir="./outputs_Llama-8b-LoRA_5000_e10/lora_8b"
+out_dir="./outputs_Qwen-7b-LoRA_5000_e20/lora_7b"
 PRED_OUTPUT="${out_dir}/predictions"
+
+# order1 子集 (5 任务)
+TASK_LIST="FOMC_shuffled,MeetingBank,Py150,ScienceQA,NumGLUE-cm"
 
 cl_method="lora"
 port=$(shuf -i25000-30000 -n1)
@@ -40,7 +46,7 @@ rm -rf "$DATA_CACHE_PATH"/*
 mkdir -p "$DATA_CACHE_PATH"
 
 # ===== Model download (idempotent, first-time only) =====
-MODEL_REPO_ID="meta-llama/Meta-Llama-3-8B-Instruct"
+MODEL_REPO_ID="Qwen/Qwen2.5-7B-Instruct"
 if [ ! -f "$MODEL_PATH/config.json" ]; then
   echo "[download] $MODEL_REPO_ID -> $MODEL_PATH"
   mkdir -p "$(dirname "$MODEL_PATH")"
@@ -55,20 +61,20 @@ if [ ! -f "$MODEL_PATH/config.json" ]; then
 fi
 
 echo "=========================================================================="
-echo "[run_llama_5000_e10] Phase 1/2: TRAINING (LLaMA-3-8B, 10 epoch x 8 tasks, no eval)"
+echo "[run_qwen_5000_e20] Phase 1/2: TRAINING (Qwen2.5-7B, 20 epoch x 5 tasks, eval every 2)"
 echo "=========================================================================="
 
 deepspeed --num_gpus=1 --master_port "$port" training/main.py \
   --data_path "$DATA_PATH" \
   --data_output_path "$DATA_CACHE_PATH" \
-  --dataset_name C-STANCE,FOMC_shuffled,MeetingBank,Py150,ScienceQA,NumGLUE-cm,NumGLUE-ds,20Minuten \
+  --dataset_name "$TASK_LIST" \
   --model_name_or_path "$MODEL_PATH" \
   --per_device_train_batch_size 32 \
   --max_prompt_len 1024 \
   --max_ans_len 512 \
   --learning_rate 1e-4 \
   --weight_decay 0. \
-  --num_train_epochs 10,10,10,10,10,10,10,10 \
+  --num_train_epochs 20,20,20,20,20 \
   --gradient_accumulation_steps 4 \
   --seed 1234 \
   --zero_stage 2 \
@@ -79,6 +85,9 @@ deepspeed --num_gpus=1 --master_port "$port" training/main.py \
   --CL_method "$cl_method" \
   --output_dir "$out_dir" \
   --model_type causal \
+  --do_eval \
+  --eval_max_samples 50 \
+  --eval_every_n_epochs 2 \
   2>&1 | tee "$out_dir/train_full.log"
 
 export OMP_NUM_THREADS=4
@@ -86,13 +95,13 @@ export TOKENIZERS_PARALLELISM=false
 
 echo ""
 echo "=========================================================================="
-echo "[run_llama_5000_e10] Phase 2/2: INFERENCE (test split, all rounds)"
+echo "[run_qwen_5000_e20] Phase 2/2: INFERENCE (test split, all rounds)"
 echo "=========================================================================="
 
 python inference/infer_single.py \
     --data_path "$DATA_PATH" \
     --data_output_path "$DATA_CACHE_PATH" \
-    --inference_tasks C-STANCE,FOMC_shuffled,MeetingBank,Py150,ScienceQA,NumGLUE-cm,NumGLUE-ds,20Minuten \
+    --inference_tasks "$TASK_LIST" \
     --model_name_or_path "$MODEL_PATH" \
     --inference_model_path "$out_dir" \
     --model_type causal \
@@ -104,7 +113,9 @@ python inference/infer_single.py \
     --CL_method lora \
     --inference_output_path "$PRED_OUTPUT" \
     --all_rounds \
-    2>&1 | tee "$PRED_OUTPUT/infer_llama.log"
+    2>&1 | tee "$PRED_OUTPUT/infer_qwen.log"
 
 echo ""
-echo "[run_llama_5000_e10] All done. Predictions -> $PRED_OUTPUT"
+echo "[run_qwen_5000_e20] All done."
+echo "  Convergence curves: $out_dir/epoch_eval.json"
+echo "  Final test metrics: $PRED_OUTPUT/results-*.json"

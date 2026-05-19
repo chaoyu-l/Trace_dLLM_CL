@@ -148,20 +148,27 @@ gpt_eval_cache*.json
 #   不上传 GitHub
 # =====================================================================
 scripts/*
-# 3 套训练配置 × 4 模型 = 12 个一站式 pipeline (训练 + 推理)
-# 共享: bs=2, grad_accum=8 (有效 batch=16)
-#   _e5:  每任务 5  epoch, 无 in-training eval
-#   _e10: 每任务 10 epoch, 无 in-training eval
-#   _e15: 每任务 15 epoch, 每 2 epoch eval 一次 (50 条 dev)
+# 4 套训练配置 × 4 模型 = 16 个一站式 pipeline (训练 + 推理)
+# 共享: per_device_bs=32, grad_accum=4 (有效 batch=128), inference_batch=128
+#   _e5:        order1, 每任务 5  epoch, 无 in-training eval
+#   _e5_order2: order2 (NumGLUE-cm→NumGLUE-ds→FOMC→20Minuten→C-STANCE→Py150→MeetingBank→ScienceQA),
+#               每任务 5 epoch, 无 in-training eval
+#   _e10:       order1, 每任务 10 epoch, 无 in-training eval
+#   _e20:       order1 子集 (FOMC_shuffled,MeetingBank,Py150,ScienceQA,NumGLUE-cm),
+#               每任务 20 epoch, 每 2 epoch eval 一次 (50 条 dev)
 !scripts/run_dream_lora_5000_e5.sh
 !scripts/run_llada_8b_5000_e5.sh
 !scripts/run_llama_8b_5000_e5.sh
 !scripts/run_qwen_7b_5000_e5.sh
+!scripts/run_dream_lora_5000_e5_order2.sh
+!scripts/run_llada_8b_5000_e5_order2.sh
+!scripts/run_llama_8b_5000_e5_order2.sh
+!scripts/run_qwen_7b_5000_e5_order2.sh
 !scripts/run_dream_lora_5000_e10.sh
 !scripts/run_llada_8b_5000_e10.sh
 !scripts/run_llama_8b_5000_e10.sh
 !scripts/run_qwen_7b_5000_e10.sh
-!scripts/run_dream_lora_5000_e15.sh
-!scripts/run_llada_8b_5000_e15.sh
-!scripts/run_llama_8b_5000_e15.sh
-!scripts/run_qwen_7b_5000_e15.sh
+!scripts/run_dream_lora_5000_e20.sh
+!scripts/run_llada_8b_5000_e20.sh
+!scripts/run_llama_8b_5000_e20.sh
+!scripts/run_qwen_7b_5000_e20.sh

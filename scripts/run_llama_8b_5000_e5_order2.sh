@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # =============================================================================
-# run_qwen_7b_5000_e15.sh
-#   Qwen2.5-7B-Instruct 一站式 pipeline (配置 C: 15 epoch, 每 2 epoch eval):
-#     Phase 1: 训练 (LoRA, 8 任务, 每任务 15 epoch)
-#              eval 在 epoch 2,4,6,...,14 末尾 (dev 前 50 条) -> epoch_eval.json
+# run_llama_8b_5000_e5_order2.sh
+#   LLaMA-3-8B-Instruct 一站式 pipeline (配置 A: 5 epoch, 无 in-training eval):
+#     任务顺序 (order2): NumGLUE-cm -> NumGLUE-ds -> FOMC_shuffled -> 20Minuten
+#                       -> C-STANCE -> Py150 -> MeetingBank -> ScienceQA
+#     Phase 0: base 推理 (无 LoRA, idempotent skip; FWT baseline, order2 专属)
+#     Phase 1: 训练 (LoRA, 8 任务, 每任务 5 epoch)
 #     Phase 2: 推理 (test 集完整, greedy, all_rounds)
 # =============================================================================
 set -eo pipefail
@@ -27,11 +29,14 @@ if [ "${CONDA_DEFAULT_ENV:-}" != "$TRACE_ENV_NAME" ]; then
 fi
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-MODEL_PATH="./models/Qwen2.5-7B-Instruct"
+MODEL_PATH="./models/Llama-3-8B-Instruct"
 DATA_PATH="./data/TRACE-Benchmark/LLM-CL-Benchmark_5000"
 DATA_CACHE_PATH="./data_files"
-out_dir="./outputs_Qwen-7b-LoRA_5000_e15/lora_7b"
+out_dir="./outputs_Llama-8b-LoRA_5000_e5_order2/lora_8b"
 PRED_OUTPUT="${out_dir}/predictions"
+
+# 任务顺序 (order2)
+TASK_ORDER="NumGLUE-cm,NumGLUE-ds,FOMC_shuffled,20Minuten,C-STANCE,Py150,MeetingBank,ScienceQA"
 
 cl_method="lora"
 port=$(shuf -i25000-30000 -n1)
@@ -41,7 +46,7 @@ rm -rf "$DATA_CACHE_PATH"/*
 mkdir -p "$DATA_CACHE_PATH"
 
 # ===== Model download (idempotent, first-time only) =====
-MODEL_REPO_ID="Qwen/Qwen2.5-7B-Instruct"
+MODEL_REPO_ID="meta-llama/Meta-Llama-3-8B-Instruct"
 if [ ! -f "$MODEL_PATH/config.json" ]; then
   echo "[download] $MODEL_REPO_ID -> $MODEL_PATH"
   mkdir -p "$(dirname "$MODEL_PATH")"
@@ -55,22 +60,56 @@ if [ ! -f "$MODEL_PATH/config.json" ]; then
   }
 fi
 
+# =============================================================================
+# Phase 0/3: BASE INFERENCE (no LoRA; idempotent; order2 专属)
+#   ScienceQA 在新顺序里位置 idx=7
+# =============================================================================
+BASE_OUT_DIR="./outputs_Llama-8b_5000_base_order2/base_metrics"
+if [ -f "$BASE_OUT_DIR/results-0-7-ScienceQA.json" ]; then
+  echo "[llama_5000_e5_order2] Phase 0 SKIP: base baseline already at $BASE_OUT_DIR/"
+else
+  mkdir -p "$BASE_OUT_DIR"
+  echo "=========================================================================="
+  echo "[llama_5000_e5_order2] Phase 0/3: BASE INFERENCE (no LoRA, for FWT baseline)"
+  echo "=========================================================================="
+
+  export OMP_NUM_THREADS=4
+  export TOKENIZERS_PARALLELISM=false
+
+  python inference/infer_single.py \
+      --data_path "$DATA_PATH" \
+      --data_output_path "$DATA_CACHE_PATH" \
+      --inference_tasks "$TASK_ORDER" \
+      --model_name_or_path "$MODEL_PATH" \
+      --inference_model_path "$MODEL_PATH" \
+      --model_type causal \
+      --temperature 0.0 \
+      --inference_batch 128 \
+      --max_prompt_len 1024 \
+      --max_ans_len 512 \
+      --seed 1234 \
+      --CL_method base \
+      --inference_output_path "$BASE_OUT_DIR" \
+      --target_round 0 \
+      2>&1 | tee "$BASE_OUT_DIR/infer_base.log"
+fi
+
 echo "=========================================================================="
-echo "[run_qwen_5000_e15] Phase 1/2: TRAINING (Qwen2.5-7B, 15 epoch x 8 tasks, eval every 2)"
+echo "[run_llama_5000_e5_order2] Phase 1/2: TRAINING (LLaMA-3-8B, 5 epoch x 8 tasks, order2)"
 echo "=========================================================================="
 
 deepspeed --num_gpus=1 --master_port "$port" training/main.py \
   --data_path "$DATA_PATH" \
   --data_output_path "$DATA_CACHE_PATH" \
-  --dataset_name C-STANCE,FOMC_shuffled,MeetingBank,Py150,ScienceQA,NumGLUE-cm,NumGLUE-ds,20Minuten \
+  --dataset_name "$TASK_ORDER" \
   --model_name_or_path "$MODEL_PATH" \
-  --per_device_train_batch_size 16 \
+  --per_device_train_batch_size 32 \
   --max_prompt_len 1024 \
   --max_ans_len 512 \
   --learning_rate 1e-4 \
   --weight_decay 0. \
-  --num_train_epochs 15,15,15,15,15,15,15,15 \
-  --gradient_accumulation_steps 8 \
+  --num_train_epochs 5,5,5,5,5,5,5,5 \
+  --gradient_accumulation_steps 4 \
   --seed 1234 \
   --zero_stage 2 \
   --bf16 \
@@ -80,9 +119,6 @@ deepspeed --num_gpus=1 --master_port "$port" training/main.py \
   --CL_method "$cl_method" \
   --output_dir "$out_dir" \
   --model_type causal \
-  --do_eval \
-  --eval_max_samples 50 \
-  --eval_every_n_epochs 2 \
   2>&1 | tee "$out_dir/train_full.log"
 
 export OMP_NUM_THREADS=4
@@ -90,27 +126,25 @@ export TOKENIZERS_PARALLELISM=false
 
 echo ""
 echo "=========================================================================="
-echo "[run_qwen_5000_e15] Phase 2/2: INFERENCE (test split, all rounds)"
+echo "[run_llama_5000_e5_order2] Phase 2/2: INFERENCE (test split, all rounds)"
 echo "=========================================================================="
 
 python inference/infer_single.py \
     --data_path "$DATA_PATH" \
     --data_output_path "$DATA_CACHE_PATH" \
-    --inference_tasks C-STANCE,FOMC_shuffled,MeetingBank,Py150,ScienceQA,NumGLUE-cm,NumGLUE-ds,20Minuten \
+    --inference_tasks "$TASK_ORDER" \
     --model_name_or_path "$MODEL_PATH" \
     --inference_model_path "$out_dir" \
     --model_type causal \
     --temperature 0.0 \
-    --inference_batch 64 \
+    --inference_batch 128 \
     --max_prompt_len 1024 \
     --max_ans_len 512 \
     --seed 1234 \
     --CL_method lora \
     --inference_output_path "$PRED_OUTPUT" \
     --all_rounds \
-    2>&1 | tee "$PRED_OUTPUT/infer_qwen.log"
+    2>&1 | tee "$PRED_OUTPUT/infer_llama.log"
 
 echo ""
-echo "[run_qwen_5000_e15] All done."
-echo "  Convergence curves: $out_dir/epoch_eval.json"
-echo "  Final test metrics: $PRED_OUTPUT/results-*.json"
+echo "[run_llama_5000_e5_order2] All done. Predictions -> $PRED_OUTPUT"
