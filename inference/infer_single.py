@@ -87,68 +87,18 @@ def _enable_llada_kv_cache(model):
     cls.forward = local_ns["forward"]
     print("[INFO] Patched LLaDAModel to enable KV cache (Fast-dLLM)")
 
-# Diffusion models denoise a fixed-size canvas, so shorter max_ans_len directly
-# reduces computation. AR models already stop at EOS, making this unnecessary.
-DIFFUSION_TASK_MAX_ANS_LEN = {
-    # TRACE
-    "C-STANCE":    4,
-    "FOMC":        4,
-    "NumGLUE-cm":  8,
-    "NumGLUE-ds":  8,
-    "Py150":       32,
-    "MeetingBank": 224,   # 7·32，与 LLADA_TASK_BLOCK_LENGTH=32 对齐（原 216 不整除会触发回退）
-    "20Minuten":   160,   # 5·32，与 LLADA_TASK_BLOCK_LENGTH=32 对齐（原 152 不整除会触发回退）
-    "ScienceQA":   480,   # 15·32，与 LLADA_TASK_BLOCK_LENGTH=32 对齐（原 464 不整除会触发回退）
-    # SSR (ACL 2024) — P95 answer token lengths on 2000-sample train set,
-    # ceil to multiple of 8. sa/pos are strictly 1-token binary labels
-    # (positive/negative, True/False), so we use canvas=4 to match the TRACE
-    # binary-classification convention (C-STANCE/FOMC).
-    "qa":          24,
-    "qg":          24,
-    "sa":          4,
-    "sum":         48,
-    "trans":       72,
-    "dsg":         32,
-    "expl":        80,
-    "para":        32,
-    "pe":          96,
-    "pos":         4,
-}
-
-# Per-task semi-autoregressive block size for LLaDA inference.
-# Derived from LLaDA paper's reported best configs:
-#   - GSM8K/MATH (numerical):    gen=256, block=8
-#   - HumanEval/MBPP (code/long): gen=512, block=32
-# Rule of thumb: keep block size at the absolute scale the paper validated
-# (8 for short-numeric, 32 for code/long), not a fixed ratio of gen_length.
-# For very short canvases (gen<=16), use a single block (block=gen_length)
-# since semi-AR splitting is meaningless on label-style outputs.
-# Dream has no native semi-AR decoding, so this dict only applies to LLaDA.
-LLADA_TASK_BLOCK_LENGTH = {
-    # TRACE
-    "C-STANCE":    16,   # 1 block  — short label, single-shot
-    "FOMC":        16,   # 1 block  — short label, single-shot
-    "NumGLUE-cm":  8,    # 4 blocks — numeric reasoning, mirrors GSM8K block=8
-    "NumGLUE-ds":  8,    # 4 blocks — numeric reasoning, mirrors GSM8K block=8
-    "Py150":       32,   # 4 blocks — code, mirrors HumanEval block=32
-    "MeetingBank": 32,   # 16 blocks — long-form, mirrors MBPP/HumanEval
-    "20Minuten":   32,   # 16 blocks — long-form summarization
-    "ScienceQA":   32,   # 16 blocks — long-form QA
-    # SSR — block only takes LLaDA-paper-validated values {8, 16, 32, 64, 128}
-    # (EVAL.md: GSM8K=8/16, GPQA/IFEval=16, HumanEval/MBPP=32, Math=64/128).
-    # canvas % block == 0 required by LLaDA generate.py:68.
-    "qa":          8,    # 3 blocks — canvas=24, only 8 ∈ paper-set divides 24
-    "qg":          8,    # 3 blocks — canvas=24, same
-    "sa":          4,    # 1 block  — canvas=4 forces block=canvas (<8)
-    "sum":         16,   # 3 blocks — canvas=48, 16 closer to paper default
-    "trans":       8,    # 9 blocks — canvas=72, only 8 ∈ paper-set divides 72
-    "dsg":         16,   # 2 blocks — canvas=32, 16 is mid option
-    "expl":        16,   # 5 blocks — canvas=80
-    "para":        16,   # 2 blocks — canvas=32, same as dsg
-    "pe":          32,   # 3 blocks — canvas=96, 32 = HumanEval/MBPP paper block
-    "pos":         4,    # 1 block  — canvas=4 forces block=canvas (<8)
-}
-LLADA_DEFAULT_BLOCK_LENGTH = 128  # fallback for unknown tasks
+# Per-task diffusion decode config (canvas + LLaDA block_length) lives in
+# utils/diffusion/decode_config.py — single source of truth shared with
+# utils/data/data_collator.py (training canvas) and model/base_model.py
+# (in-training eval). 加新任务/改 canvas/改 block 只改那一个文件。
+from utils.diffusion.decode_config import (
+    DIFFUSION_TASK_MAX_ANS_LEN,
+    LLADA_TASK_BLOCK_LENGTH,
+    LLADA_DEFAULT_BLOCK_LENGTH,
+    resolve_task_canvas,
+    resolve_llada_block_length,
+    normalize_task_name,
+)
 
 
 def parse_args():
@@ -520,10 +470,9 @@ def main():
 
             # Per-task max_ans_len for diffusion models to avoid wasting
             # compute on oversized canvas for short-answer tasks.
-            # 归一化, 让 FOMC_shuffled 等派生数据集命中 FOMC 的 per-task max_ans_len.
-            _mal_task = _normalize_task_name(inference_task)
-            if args.model_type == "diffusion" and _mal_task in DIFFUSION_TASK_MAX_ANS_LEN:
-                task_max_ans_len = DIFFUSION_TASK_MAX_ANS_LEN[_mal_task]
+            # resolve_task_canvas 内部做 FOMC_shuffled -> FOMC 归一化。
+            if args.model_type == "diffusion":
+                task_max_ans_len = resolve_task_canvas(inference_task, args.max_ans_len)
             else:
                 task_max_ans_len = args.max_ans_len
             task_steps = task_max_ans_len if (args.model_type == "diffusion" and args.sampling_steps <= 0) else args.sampling_steps
@@ -533,11 +482,8 @@ def main():
             if (args.model_type == "diffusion"
                     and getattr(args, "model_family", None) == "llada"
                     and args.block_length is None):
-                # 归一化, 让 FOMC_shuffled 等派生数据集命中 FOMC 的 block_length
-                _bl_task = _normalize_task_name(inference_task)
-                task_block_length = LLADA_TASK_BLOCK_LENGTH.get(
-                    _bl_task, LLADA_DEFAULT_BLOCK_LENGTH
-                )
+                # cli_block_length=None -> resolver 查 per-task 表 (with _shuffled 归一化), 兜底 128
+                task_block_length = resolve_llada_block_length(inference_task, cli_block_length=None)
 
             block_log = ""
             if task_block_length is not None:

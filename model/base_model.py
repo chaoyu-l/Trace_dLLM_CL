@@ -60,6 +60,10 @@ from transformers import GenerationConfig
 # HuggingFace 的生成配置类，用来统一控制 generate 的采样参数
 
 from utils.diffusion.dream_gen_utils import q_sample, context_adaptive_reweight
+from utils.diffusion.decode_config import (
+    resolve_task_canvas,
+    resolve_llada_block_length,
+)
 from utils.cl_metrics import (
     linear_cka,
     linear_cka_unbiased,
@@ -158,9 +162,10 @@ class CL_Base_Model:
         # 缓存 Dream 的 context-adaptive reweight 矩阵
         # 这样不用每个 batch 都重新构建
 
-        self._cart_p = float(getattr(self.args, "diffusion_cart_p", 0.01))
+        self._cart_p = float(getattr(self.args, "diffusion_cart_p", 0.1))
         # 读取 Dream 的 CART 超参数 p
-        # 如果 args 没有 diffusion_cart_p，则默认用 0.01
+        # fallback 0.1 与 training/main.py:308 argparse default 及 line 358 处一致;
+        # argparse 注册过该字段, 所以正常路径下 fallback 是死代码, 但保持三处统一避免误导.
 
         self._max_seq_len = int(getattr(self.args, "max_prompt_len", 512)) + int(getattr(self.args, "max_ans_len", 512))
         # 记录最大序列长度 = prompt 最大长度 + answer 最大长度
@@ -182,9 +187,12 @@ class CL_Base_Model:
         self.args.model_family = mf
         return mf
 
-    def generate(self, batch, max_new_tokens=64):
+    def generate(self, batch, max_new_tokens=64, task=None):
         # 定义统一的生成接口
         # 对不同模型家族，内部走不同的生成实现
+        # task: 当前任务名 (in-training eval 调用方传入)。LLaDA 用它查 per-task
+        #       block_length, 让 in-training eval 与 Phase 2 inference 解码轨迹一致。
+        #       None 时退化到 LLADA_DEFAULT_BLOCK_LENGTH (=128).
 
         input_ids = batch["input_ids"]
         # 从 batch 里取 input_ids
@@ -231,6 +239,9 @@ class CL_Base_Model:
                 )
                 return out.sequences if hasattr(out, "sequences") else out
 
+            # LLaDA block_length: CLI > per-task 表 > 128.
+            # resolver 内部 is None 判断 + 任务名归一化, 与 Phase 2 inference 走同一份表。
+            _bl = resolve_llada_block_length(task, cli_block_length=getattr(self.args, "block_length", None))
             llada_kwargs = dict(
                 model=raw_model,
                 tokenizer=self.tokenizer,
@@ -239,7 +250,7 @@ class CL_Base_Model:
                 max_new_tokens=max_new_tokens,
                 steps=getattr(self.args, "sampling_steps", 64),
                 temperature=getattr(self.args, "sampling_temperature", 0.0),
-                block_length=getattr(self.args, "block_length", 128),
+                block_length=_bl,
                 remasking=getattr(self.args, "remasking_strategy", "low_confidence"),
             )
 
@@ -642,7 +653,12 @@ class CL_Base_Model:
         it can be tuned from shell scripts without editing Python code.
         """
         if num_batches is None:
-            num_batches = int(getattr(self.args, "num_probe_batches", 32))
+            # argparse 注册的 --num_probe_batches default=None, 所以 getattr fallback 32 永远不命中;
+            # 直接 int(None) 会 TypeError, 必须先 is None 检查. 调用方 (train_continual) 通过
+            # diagnostics_enabled gate 保证只有 CLI 显式传了才进来, 但仍 defensively 兜底以防未来
+            # 有人直接调用 _prepare_probe_batches(num_batches=None).
+            _np = getattr(self.args, "num_probe_batches", None)
+            num_batches = int(_np) if _np is not None else 32
         first_task = list(self.eval_task_list.keys())[0]
         loader = self.eval_task_list[first_task]
         probes = []
@@ -839,7 +855,10 @@ class CL_Base_Model:
 
         if gc_was_enabled:
             hf_model.gradient_checkpointing_disable()
-        if hasattr(hf_model, "config") and hf_model.config is not None:
+        # AR 推理需要 KV cache 加速; 但 LLaDA 的 modeling.py 显式 assert (past_key_values is None
+        # and not use_cache), Dream 的 diffusion_generate 也自带 cache 管理。只对 AR 开 use_cache,
+        # 对 diffusion 路径保持 False, 否则 LLaDA forward 立即崩在 "kvcache is not suppotred for MDM"。
+        if hasattr(hf_model, "config") and hf_model.config is not None and not self.is_diffusion:
             hf_model.config.use_cache = True
 
         predicted_sequences = []
@@ -851,6 +870,14 @@ class CL_Base_Model:
             self.args.global_rank,
         )
 
+        # Per-task canvas: diffusion 走 DIFFUSION_TASK_MAX_ANS_LEN[task], AR 走 args.max_ans_len。
+        # 与 Phase 2 inference (infer_single.py: resolve_task_canvas) 完全一致 -> in-training
+        # eval 出的指标和 final inference 同口径。
+        if self.is_diffusion:
+            eval_max_new_tokens = resolve_task_canvas(task, self.args.max_ans_len)
+        else:
+            eval_max_new_tokens = self.args.max_ans_len
+
         for step, batch in enumerate(eval_dataloader):
             sources_sequences += batch.pop('sources', [])
             ground_truths += batch.pop('gts', [])
@@ -859,7 +886,7 @@ class CL_Base_Model:
             gen_batch = to_device(gen_batch, device)
 
             with torch.no_grad():
-                generate_ids = self.generate(gen_batch, max_new_tokens=self.args.max_ans_len)
+                generate_ids = self.generate(gen_batch, max_new_tokens=eval_max_new_tokens, task=task)
 
             decoded = self._decode_predictions(generate_ids, gen_batch['input_ids'])
             predicted_sequences += decoded

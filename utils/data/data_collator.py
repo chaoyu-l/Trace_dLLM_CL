@@ -15,32 +15,9 @@ logger = logging.getLogger(__name__)  # 获取当前模块的 logger（可用于
 
 # Diffusion 训练窗口应与推理窗口对齐：模型在固定长度窗口上 denoise，
 # 训练时每个样本 pad 到 (prompt_len + task_ans_len)，让尾部 pad/EOS 获得监督信号。
-# 数值与 inference/infer_single.py 中的 DIFFUSION_TASK_MAX_ANS_LEN 保持一致。
-DIFFUSION_TASK_MAX_ANS_LEN = {
-    # TRACE
-    "C-STANCE":    4,
-    "FOMC":        4,
-    "NumGLUE-cm":  8,
-    "NumGLUE-ds":  8,
-    "Py150":       32,
-    "MeetingBank": 224,   # 7·32，与 LLADA_TASK_BLOCK_LENGTH=32 对齐（原 216 不整除会触发回退）
-    "20Minuten":   160,   # 5·32，与 LLADA_TASK_BLOCK_LENGTH=32 对齐（原 152 不整除会触发回退）
-    "ScienceQA":   480,   # 15·32，与 LLADA_TASK_BLOCK_LENGTH=32 对齐（原 464 不整除会触发回退）
-    # SSR (ACL 2024) — P95 answer token lengths on 2000-sample train set,
-    # ceil to multiple of 8. sa/pos are strictly 1-token binary labels
-    # (positive/negative, True/False), so we use canvas=4 to match the TRACE
-    # binary-classification convention (C-STANCE/FOMC).
-    "qa":          24,
-    "qg":          24,
-    "sa":          4,
-    "sum":         48,
-    "trans":       72,
-    "dsg":         32,
-    "expl":        80,
-    "para":        32,
-    "pe":          96,
-    "pos":         4,
-}
+# 单一来源位于 utils/diffusion/decode_config.py, in-training eval / Phase 2 inference
+# / training-canvas 共享同一份表 -> 三处解码窗口口径强制一致。
+from utils.diffusion.decode_config import DIFFUSION_TASK_MAX_ANS_LEN  # noqa: F401
 
 # Per-task fixed EOS pad count N (K = N+1 = 答案区尾部 EOS 总数)。
 # 基于 LLM-CL-Benchmark_500 真实 ans_len 分布 (collator 实测验证 4000/4000):
