@@ -39,7 +39,8 @@ def main():
         tag = exp_dir.name
         exp = {"base_metrics": {}, "predictions": {}, "epoch_eval": None}
 
-        for base_dir in exp_dir.glob("outputs_*_base/base_metrics"):
+        # Match both *_base (e5) and *_base_order2 (order2) layouts
+        for base_dir in exp_dir.glob("outputs_*_base*/base_metrics"):
             for f in sorted(base_dir.glob("results-*.json")):
                 m = RESULT_PATTERN.match(f.name)
                 if m:

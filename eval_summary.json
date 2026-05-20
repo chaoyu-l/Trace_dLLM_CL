@@ -80,6 +80,21 @@
       "epoch_eval": null,
       "predictions": {}
     },
+    "dream_lora_5000_e5_order2": {
+      "base_metrics": {
+        "FOMC_shuffled": {
+          "accuracy": 0.3971774193548387
+        },
+        "NumGLUE-cm": {
+          "accuracy": 0.4444444444444444
+        },
+        "NumGLUE-ds": {
+          "accuracy": 0.38153846153846155
+        }
+      },
+      "epoch_eval": null,
+      "predictions": {}
+    },
     "llada_8b_5000_e20": {
       "base_metrics": {},
       "epoch_eval": {
@@ -132,6 +147,21 @@
       "epoch_eval": null,
       "predictions": {}
     },
+    "llada_8b_5000_e5_order2": {
+      "base_metrics": {
+        "FOMC_shuffled": {
+          "accuracy": 0.5241935483870968
+        },
+        "NumGLUE-cm": {
+          "accuracy": 0.5185185185185185
+        },
+        "NumGLUE-ds": {
+          "accuracy": 0.4
+        }
+      },
+      "epoch_eval": null,
+      "predictions": {}
+    },
     "llama_8b_5000_e10": {
       "base_metrics": {},
       "epoch_eval": null,
@@ -173,6 +203,14 @@
           }
         },
         "1": {
+          "20Minuten": {
+            "bleu-1": 0.1584967860523559,
+            "bleu-4": 0.015231336675737506,
+            "rouge-L": 0.1994298481310192,
+            "sari": {
+              "sari": 42.89736691450405
+            }
+          },
           "C-STANCE": {
             "accuracy": 0.441
           },
@@ -183,6 +221,49 @@
             "bleu-1": 0.186579615494491,
             "bleu-4": 0.041984823214313814,
             "rouge-L": 0.20570340457108693
+          },
+          "NumGLUE-cm": {
+            "accuracy": 0.0
+          },
+          "NumGLUE-ds": {
+            "accuracy": 0.0
+          },
+          "Py150": {
+            "similarity": 6.5265
+          },
+          "ScienceQA": {
+            "accuracy": 0.794,
+            "bleu-1": 0.0,
+            "bleu-4": 0.0,
+            "rouge-L": 0.0
+          }
+        },
+        "2": {
+          "C-STANCE": {
+            "accuracy": 0.4345
+          },
+          "FOMC_shuffled": {
+            "accuracy": 0.6693548387096774
+          },
+          "MeetingBank": {
+            "bleu-1": 0.4228737312549363,
+            "bleu-4": 0.28036561554404865,
+            "rouge-L": 0.5051672973392358
+          },
+          "NumGLUE-cm": {
+            "accuracy": 0.08641975308641975
+          },
+          "NumGLUE-ds": {
+            "accuracy": 0.009230769230769232
+          },
+          "Py150": {
+            "similarity": 12.7585
+          },
+          "ScienceQA": {
+            "accuracy": 0.707,
+            "bleu-1": 0.0,
+            "bleu-4": 0.0,
+            "rouge-L": 0.0
           }
         }
       }
@@ -248,6 +329,11 @@
             "bleu-4": 0.2547195630088867,
             "rouge-L": 0.48156139832325706
           },
+          "19": {
+            "bleu-1": 0.42852501806951176,
+            "bleu-4": 0.2664988841293936,
+            "rouge-L": 0.48178301812009827
+          },
           "3": {
             "bleu-1": 0.39453437068824465,
             "bleu-4": 0.2448335192111372,
@@ -267,6 +353,11 @@
             "bleu-1": 0.42133018990669846,
             "bleu-4": 0.26016647354483147,
             "rouge-L": 0.4802014715048191
+          }
+        },
+        "Py150": {
+          "1": {
+            "similarity": 58.44
           }
         }
       },
@@ -602,7 +693,42 @@
       }
     },
     "llama_8b_5000_e5_order2": {
-      "base_metrics": {},
+      "base_metrics": {
+        "20Minuten": {
+          "bleu-1": 0.115307343380688,
+          "bleu-4": 0.010244004481539845,
+          "rouge-L": 0.17565353373909154,
+          "sari": {
+            "sari": 43.096787926666615
+          }
+        },
+        "C-STANCE": {
+          "accuracy": 0.52
+        },
+        "FOMC_shuffled": {
+          "accuracy": 0.3407258064516129
+        },
+        "MeetingBank": {
+          "bleu-1": 0.16026445927377578,
+          "bleu-4": 0.037024474638305646,
+          "rouge-L": 0.1910580292478476
+        },
+        "NumGLUE-cm": {
+          "accuracy": 0.0
+        },
+        "NumGLUE-ds": {
+          "accuracy": 0.0
+        },
+        "Py150": {
+          "similarity": 3.8065
+        },
+        "ScienceQA": {
+          "accuracy": 0.4035,
+          "bleu-1": 0.16158379450627583,
+          "bleu-4": 0.03462391158399983,
+          "rouge-L": 0.270863048769727
+        }
+      },
       "epoch_eval": null,
       "predictions": {
         "0": {
@@ -895,6 +1021,25 @@
         }
       }
     },
+    "qwen_7b_5000_e10": {
+      "base_metrics": {},
+      "epoch_eval": null,
+      "predictions": {
+        "0": {
+          "C-STANCE": {
+            "accuracy": 0.5825
+          },
+          "FOMC_shuffled": {
+            "accuracy": 0.5725806451612904
+          },
+          "MeetingBank": {
+            "bleu-1": 0.15011808660752013,
+            "bleu-4": 0.03092549310898864,
+            "rouge-L": 0.17544310373648928
+          }
+        }
+      }
+    },
     "qwen_7b_5000_e20": {
       "base_metrics": {},
       "epoch_eval": {
@@ -980,6 +1125,14 @@
             "bleu-1": 0.3960234619316815,
             "bleu-4": 0.24750629296251708,
             "rouge-L": 0.47593898057941325
+          }
+        },
+        "Py150": {
+          "1": {
+            "similarity": 59.78
+          },
+          "3": {
+            "similarity": 61.42
           }
         }
       },
@@ -1315,7 +1468,42 @@
       }
     },
     "qwen_7b_5000_e5_order2": {
-      "base_metrics": {},
+      "base_metrics": {
+        "20Minuten": {
+          "bleu-1": 0.11453532512743524,
+          "bleu-4": 0.005631313599157886,
+          "rouge-L": 0.16722659182819435,
+          "sari": {
+            "sari": 41.6778881797651
+          }
+        },
+        "C-STANCE": {
+          "accuracy": 0.618
+        },
+        "FOMC_shuffled": {
+          "accuracy": 0.45161290322580644
+        },
+        "MeetingBank": {
+          "bleu-1": 0.13319314871000706,
+          "bleu-4": 0.027716876529016568,
+          "rouge-L": 0.16475560154207633
+        },
+        "NumGLUE-cm": {
+          "accuracy": 0.0
+        },
+        "NumGLUE-ds": {
+          "accuracy": 0.0
+        },
+        "Py150": {
+          "similarity": 3.214
+        },
+        "ScienceQA": {
+          "accuracy": 0.7345,
+          "bleu-1": 0.21816070193022413,
+          "bleu-4": 0.04622514120964976,
+          "rouge-L": 0.28032121101566243
+        }
+      },
       "epoch_eval": null,
       "predictions": {
         "0": {
