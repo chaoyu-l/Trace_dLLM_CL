@@ -65,13 +65,13 @@ deepspeed --num_gpus=1 --master_port "$port" training/main.py \
   --data_output_path "$DATA_CACHE_PATH" \
   --dataset_name C-STANCE,FOMC_shuffled,MeetingBank,Py150,ScienceQA,NumGLUE-cm,NumGLUE-ds,20Minuten \
   --model_name_or_path "$MODEL_PATH" \
-  --per_device_train_batch_size 32 \
+  --per_device_train_batch_size 8 \
   --max_prompt_len 1024 \
   --max_ans_len 512 \
   --learning_rate 1e-4 \
   --weight_decay 0. \
   --num_train_epochs 10,10,10,10,10,10,10,10 \
-  --gradient_accumulation_steps 4 \
+  --gradient_accumulation_steps 16 \
   --seed 1234 \
   --zero_stage 2 \
   --bf16 \
@@ -101,7 +101,7 @@ python inference/infer_single.py \
     --sampling_steps 0 \
     --sampling_temperature 0.0 \
     --remasking_strategy low_confidence \
-    --inference_batch 128 \
+    --inference_batch 64 \
     --max_prompt_len 1024 \
     --max_ans_len 512 \
     --seed 1234 \

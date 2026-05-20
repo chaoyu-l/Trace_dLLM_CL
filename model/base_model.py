@@ -1156,7 +1156,49 @@ class CL_Base_Model:
                 self.args.global_rank,
             )
 
+        # Fix 4b: Resume from last saved adapter (idempotent for fresh runs)
+        # 扫描 output_dir/<round>/, 找到最大已 saved round R, 加载 LoRA 状态,
+        # 跳过 task 0..R 训练循环. fresh first run 无 saved adapter -> -1 -> 不 skip.
+        _resume_from = -1
+        for _r in range(len(task_names)):
+            _bin = os.path.join(self.args.output_dir, str(_r), "pytorch_model.bin")
+            _safe = os.path.join(self.args.output_dir, str(_r), "adapter_model.safetensors")
+            if os.path.isfile(_bin) or os.path.isfile(_safe):
+                _resume_from = _r
+        if _resume_from >= 0:
+            _last_dir = os.path.join(self.args.output_dir, str(_resume_from))
+            _bin = os.path.join(_last_dir, "pytorch_model.bin")
+            _safe = os.path.join(_last_dir, "adapter_model.safetensors")
+            try:
+                if os.path.isfile(_safe):
+                    from safetensors.torch import load_file
+                    _state_dict = load_file(_safe)
+                else:
+                    _state_dict = torch.load(_bin, map_location="cpu", weights_only=False)
+                _raw = self.model.module if hasattr(self.model, "module") else self.model
+                _missing, _unexpected = _raw.load_state_dict(_state_dict, strict=False)
+                print_rank_0(
+                    f"[resume] loaded LoRA from {_last_dir} "
+                    f"(missing={len(_missing)}, unexpected={len(_unexpected)}). "
+                    f"Skipping tasks 0..{_resume_from}, resume from task {_resume_from + 1}.",
+                    self.args.global_rank,
+                )
+            except Exception as _e:
+                print_rank_0(
+                    f"[resume] WARN: load_state_dict from {_last_dir} failed ({_e}). "
+                    f"Falling back to train-from-scratch.",
+                    self.args.global_rank,
+                )
+                _resume_from = -1
+
         for i_task, task in enumerate(self.train_task_list):
+            if i_task <= _resume_from:
+                print_rank_0(
+                    f"[resume] skip task {i_task + 1}/{len(self.train_task_list)} ({task}) "
+                    f"-- adapter already saved",
+                    self.args.global_rank,
+                )
+                continue
             t_task = time.time()
             print_rank_0(
                 f"[{_now()}] ----- Task {i_task + 1}/{len(self.train_task_list)} "

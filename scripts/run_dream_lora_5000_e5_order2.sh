@@ -109,13 +109,13 @@ deepspeed --num_gpus=1 --master_port "$port" training/main.py \
   --data_output_path "$DATA_CACHE_PATH" \
   --dataset_name "$TASK_ORDER" \
   --model_name_or_path "$MODEL_PATH" \
-  --per_device_train_batch_size 32 \
+  --per_device_train_batch_size 16 \
   --max_prompt_len 1024 \
   --max_ans_len 512 \
   --learning_rate 1e-4 \
   --weight_decay 0. \
   --num_train_epochs 5,5,5,5,5,5,5,5 \
-  --gradient_accumulation_steps 4 \
+  --gradient_accumulation_steps 8 \
   --seed 1234 \
   --zero_stage 2 \
   --bf16 \

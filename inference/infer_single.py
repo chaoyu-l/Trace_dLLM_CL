@@ -402,6 +402,12 @@ def main():
                 )
                 predicted_sequences += sequences
 
+            # Fix 3: Free GPU cache between batches (扩散 denoise 100-500 step per
+            # batch, 不释放 fragmentation 累积 -> batch time 从 64s 退化到 500s+)
+            del generate_ids
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
         return sources_sequences, predicted_sequences, ground_truths
 
     def save_inference_results(evaluation_result, sources_sequences, predicted_sequences,
@@ -464,6 +470,12 @@ def main():
 
         for inference_task_id in range(task_num):
             inference_task = inference_tasks[inference_task_id]
+            # Fix 4a: Phase 2 resume — skip if prediction already exists
+            _out_fname = f"results-{round_idx}-{inference_task_id}-{inference_task}.json"
+            _out_path = os.path.join(args.inference_output_path, _out_fname)
+            if os.path.isfile(_out_path):
+                print(f"[{_now()}] [resume] skip existing: {_out_fname}")
+                continue
             t_task = time.time()
             task_status = "[Past/Current]" if inference_task_id <= round_idx else "[Future/Zero-shot]"
             print(f"[{_now()}] ***** Inference {task_status} Task: {inference_task} (Train Round {round_idx}) *****")
