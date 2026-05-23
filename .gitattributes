@@ -1,1 +1,1 @@
-runs/**/results-*.json filter=lfs diff=lfs merge=lfs -text
+trace_results_*.zip filter=lfs diff=lfs merge=lfs -text
