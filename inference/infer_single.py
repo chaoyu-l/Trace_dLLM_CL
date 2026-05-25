@@ -40,6 +40,7 @@ from model.llada_generate import (
 from model.dream_generate import (
     dream_generate,
     dream_generate_with_cache,
+    make_dream_eos_penalty_hook,
 )
 
 
@@ -149,6 +150,16 @@ def parse_args():
                         help="Confidence threshold for adaptive unmasking (Fast-dLLM). "
                              "Supports both LLaDA and Dream. "
                              "Recommended: 0.9 for quality, 0.5 for speed.")
+    parser.add_argument("--logits_eos_inf", action="store_true",
+                        help="LLaDA only. Set logits[:, :, 126081] = -inf during decoding "
+                             "(official `logits_eos_inf` behavior). Suppresses EOS so the "
+                             "model is forced to fill the canvas with content tokens.")
+    parser.add_argument("--eos_penalty", type=float, default=0.0,
+                        help="Dream only. Padding penalty applied to pad_token_id logits "
+                             "during inference (Dream-Coder §4.1, arXiv:2509.01142). "
+                             "Bias = eos_penalty * log(1 - t + eps), annealed from t=1 -> eps. "
+                             "0.0 disables; Dream-Coder README recommends 3.0. Reduces empty "
+                             "outputs caused by early termination at high temperatures.")
 
     parser.add_argument("--target_round", type=int, default=0)
     parser.add_argument("--all_rounds", action="store_true",
@@ -302,6 +313,10 @@ def main():
             with torch.no_grad():
                 if args.model_type == "diffusion":
                     if getattr(args, "model_family", None) == "dream":
+                        _eos_pen = float(getattr(args, "eos_penalty", 0.0))
+                        _pad_id = (tokenizer.pad_token_id
+                                   if tokenizer.pad_token_id is not None
+                                   else tokenizer.eos_token_id)
                         if getattr(args, "use_fast_cache", False):
                             generate_ids = dream_generate_with_cache(
                                 model,
@@ -313,10 +328,11 @@ def main():
                                 threshold=getattr(args, "confidence_threshold", None),
                                 block_length=getattr(args, "block_length", None),
                                 alg=getattr(args, "dream_alg", "origin"),
+                                eos_penalty=_eos_pen,
+                                pad_token_id=_pad_id,
                             )
                         else:
-                            out = model.diffusion_generate(
-                                batch["input_ids"],
+                            gen_kwargs = dict(
                                 attention_mask=batch["attention_mask"],
                                 max_new_tokens=effective_max_ans_len,
                                 steps=effective_steps,
@@ -325,6 +341,15 @@ def main():
                                 return_dict_in_generate=True,
                                 output_history=False,
                             )
+                            if _eos_pen != 0.0:
+                                gen_kwargs["generation_logits_hook_func"] = (
+                                    make_dream_eos_penalty_hook(
+                                        eos_penalty=_eos_pen,
+                                        pad_token_id=_pad_id,
+                                        steps=effective_steps,
+                                    )
+                                )
+                            out = model.diffusion_generate(batch["input_ids"], **gen_kwargs)
                             generate_ids = out.sequences if hasattr(out, "sequences") else out
                     else:
                         llada_kwargs = dict(
@@ -336,6 +361,7 @@ def main():
                             temperature=args.sampling_temperature,
                             remasking=args.remasking_strategy,
                             block_length=effective_block_length,
+                            logits_eos_inf=args.logits_eos_inf,
                         )
                         if getattr(args, "use_dual_cache", False):
                             llada_kwargs["threshold"] = getattr(args, "confidence_threshold", None)
