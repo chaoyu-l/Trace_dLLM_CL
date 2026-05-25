@@ -184,6 +184,8 @@ scripts/*
 # LLaDA 500 数据集 + logits_eos_inf 推理对照实验
 !scripts/run_llada_8b_500_e5_logitseos.sh
 !scripts/infer_llada_500_logitseos_py150.sh
+# Dream 500 数据集 + Dream-Coder padding penalty 推理对照实验
+!scripts/run_dream_lora_500_e5_eospenalty.sh
 
 # =====================================================================
 # 实验产物 (sandbox dirs, slurm logs)

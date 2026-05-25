@@ -91,6 +91,7 @@ from model.llada_generate import (
 from model.dream_generate import (
     dream_generate,
     dream_generate_with_cache,
+    make_dream_eos_penalty_hook,
 )
 
 
@@ -215,6 +216,11 @@ class CL_Base_Model:
             if model_family == "dream":
                 use_cache = getattr(self.args, "use_fast_cache", False)
                 conf_threshold = getattr(self.args, "confidence_threshold", None)
+                eos_pen = float(getattr(self.args, "eos_penalty", 0.0))
+                pad_id = (self.tokenizer.pad_token_id
+                          if self.tokenizer.pad_token_id is not None
+                          else self.tokenizer.eos_token_id)
+                d_steps = getattr(self.args, "sampling_steps", 64)
 
                 if use_cache:
                     return dream_generate_with_cache(
@@ -222,21 +228,31 @@ class CL_Base_Model:
                         input_ids,
                         attention_mask=attention_mask,
                         max_new_tokens=max_new_tokens,
-                        steps=getattr(self.args, "sampling_steps", 64),
+                        steps=d_steps,
                         temperature=getattr(self.args, "sampling_temperature", 0.0),
                         threshold=conf_threshold,
                         block_length=getattr(self.args, "block_length", None),
+                        eos_penalty=eos_pen,
+                        pad_token_id=pad_id,
                     )
 
-                out = raw_model.diffusion_generate(
-                    input_ids,
+                gen_kwargs = dict(
                     attention_mask=attention_mask,
                     max_new_tokens=max_new_tokens,
-                    steps=getattr(self.args, "sampling_steps", 64),
+                    steps=d_steps,
                     temperature=getattr(self.args, "sampling_temperature", 0.0),
                     return_dict_in_generate=True,
                     output_history=False,
                 )
+                if eos_pen != 0.0:
+                    gen_kwargs["generation_logits_hook_func"] = (
+                        make_dream_eos_penalty_hook(
+                            eos_penalty=eos_pen,
+                            pad_token_id=pad_id,
+                            steps=d_steps,
+                        )
+                    )
+                out = raw_model.diffusion_generate(input_ids, **gen_kwargs)
                 return out.sequences if hasattr(out, "sequences") else out
 
             # LLaDA block_length: CLI > per-task 表 > 128.
