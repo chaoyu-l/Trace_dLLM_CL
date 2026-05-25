@@ -7,6 +7,11 @@ adapted from NVlabs/Fast-dLLM (Wu et al., ICLR 2026).
 Two public functions:
     dream_generate            -- standalone baseline (matches Dream._sample)
     dream_generate_with_cache -- block-wise KV cache + adaptive unmasking
+
+Optional EOS/PAD penalty (Dream-Coder §4.1 padding penalty, arXiv:2509.01142):
+    logits[..., pad_token_id] += eos_penalty * log(1 - t + eps)
+    where t goes from 1 -> eps linearly, so the penalty starts strong
+    (~ eos_penalty * log(eps)) and anneals to 0 in the last step.
 """
 
 import torch
@@ -14,6 +19,45 @@ import torch.nn.functional as F
 import torch.distributions as dists
 from typing import Optional
 from transformers.cache_utils import DynamicCache
+
+
+def _apply_pad_penalty(logits: torch.Tensor,
+                       pad_token_id: int,
+                       eos_penalty: float,
+                       t: torch.Tensor,
+                       eps: float) -> torch.Tensor:
+    """In-place Dream-Coder padding penalty on the pad column of `logits`.
+
+    Negative bias on the pad/EOS column that anneals to 0 as t -> eps,
+    so the model is discouraged from collapsing to PAD early in denoising
+    but is free to terminate naturally near the end.
+    """
+    bias = float(eos_penalty) * torch.log(1.0 - t + eps)
+    logits[..., pad_token_id] = logits[..., pad_token_id] + bias
+    return logits
+
+
+def make_dream_eos_penalty_hook(eos_penalty: float,
+                                pad_token_id: int,
+                                steps: int,
+                                eps: float = 1e-3):
+    """Build a `generation_logits_hook_func` for Dream's stock `_sample`.
+
+    Mirrors the schedule used inside `dream_generate` (timesteps =
+    linspace(1, eps, steps + 1), penalty = eos_penalty * log(1 - t + eps)),
+    so the no-cache path (Dream HF `diffusion_generate`) and the fast-cache
+    path produce the same penalty trajectory.
+    """
+    timesteps = torch.linspace(1.0, eps, steps + 1)
+
+    def hook(step, x, logits):
+        if eos_penalty == 0.0 or pad_token_id is None:
+            return logits
+        idx = min(int(step), len(timesteps) - 2)
+        t = timesteps[idx].to(logits.device)
+        return _apply_pad_penalty(logits, pad_token_id, eos_penalty, t, eps)
+
+    return hook
 
 
 # ---------------------------------------------------------------------------
@@ -199,6 +243,8 @@ def dream_generate(
     top_k: Optional[int] = None,
     eps: float = 1e-3,
     threshold: Optional[float] = None,
+    eos_penalty: float = 0.0,
+    pad_token_id: Optional[int] = None,
 ):
     """Dream diffusion generation -- standalone version of ``Dream._sample``.
 
@@ -215,6 +261,7 @@ def dream_generate(
     )
 
     timesteps = torch.linspace(1, eps, steps + 1, device=device)
+    use_pad_penalty = (eos_penalty != 0.0) and (pad_token_id is not None)
 
     for i in range(steps):
         mask_index = (x == mask_token_id)
@@ -228,6 +275,8 @@ def dream_generate(
         ).logits
 
         shifted = torch.cat([logits[:, :1], logits[:, :-1]], dim=1)
+        if use_pad_penalty:
+            _apply_pad_penalty(shifted, pad_token_id, eos_penalty, timesteps[i], eps)
         gen_logits = shifted[:, prompt_len:]
 
         _denoise_step(
@@ -259,6 +308,8 @@ def dream_generate_with_cache(
     eps: float = 1e-3,
     threshold: Optional[float] = None,
     block_length: Optional[int] = None,
+    eos_penalty: float = 0.0,
+    pad_token_id: Optional[int] = None,
 ):
     """Dream generation with block-wise KV cache (Fast-dLLM).
 
@@ -290,6 +341,7 @@ def dream_generate_with_cache(
         return dream_generate(
             model, input_ids, attention_mask, max_new_tokens, steps,
             temperature, alg, alg_temp, top_p, top_k, eps, threshold,
+            eos_penalty=eos_penalty, pad_token_id=pad_token_id,
         )
 
     gen_length = max_new_tokens
@@ -312,6 +364,7 @@ def dream_generate_with_cache(
 
     timesteps = torch.linspace(1, eps, steps_per_block + 1, device=device)
     use_threshold = (threshold is not None)
+    use_pad_penalty = (eos_penalty != 0.0) and (pad_token_id is not None)
 
     for blk in range(num_blocks):
         block_start = prompt_len + blk * block_length
@@ -329,6 +382,8 @@ def dream_generate_with_cache(
         logits = output.logits
         # Only need the single slice; avoid allocating a full shifted copy.
         block_start_logits = logits[:, block_start - 1, :]       # [B, V]
+        if use_pad_penalty:
+            _apply_pad_penalty(block_start_logits, pad_token_id, eos_penalty, timesteps[0], eps)
         _, first_x0 = _sample_tokens(
             block_start_logits, temperature=temperature,
             top_p=top_p, top_k=top_k,
@@ -375,6 +430,10 @@ def dream_generate_with_cache(
             local_shifted[:, 0] = local_logits[:, 0]
             local_shifted[:, 1:] = local_logits[:, :-1]
             del step_cache, output, local_logits
+
+            if use_pad_penalty:
+                t_idx = min(i, steps_per_block - 1)
+                _apply_pad_penalty(local_shifted, pad_token_id, eos_penalty, timesteps[t_idx], eps)
 
             suffix_len = total_len - block_start
 
