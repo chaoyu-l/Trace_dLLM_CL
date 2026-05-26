@@ -136,7 +136,7 @@ python inference/infer_single.py \
     --sampling_steps 0 \
     --sampling_temperature 0.0 \
     --remasking_strategy low_confidence \
-    --inference_batch 128 \
+    --inference_batch 256 \
     --max_prompt_len 1024 \
     --max_ans_len 512 \
     --seed 1234 \

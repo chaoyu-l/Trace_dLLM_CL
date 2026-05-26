@@ -125,7 +125,7 @@ python inference/infer_single.py \
     --model_type diffusion \
     --sampling_steps 0 \
     --sampling_temperature 0.0 \
-    --inference_batch 4 \
+    --inference_batch 128 \
     --max_prompt_len 1024 \
     --max_ans_len 512 \
     --seed 1234 \
