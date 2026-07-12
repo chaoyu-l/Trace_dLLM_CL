@@ -48,6 +48,10 @@ CLAUDE.local.md
 .git.backup*/
 .git.backup*
 
+# opencompass_eval/ 是独立的 git 仓库 (自己的 remote: chaoyu-l/opencompass_eval)，
+# 在本仓库里只作为本地未跟踪目录存在，代码改动单独在该仓库内 commit/push。
+opencompass_eval/
+
 # =====================================================================
 # 实验输出 —— 全部不上传
 #   outputs_*  覆盖所有 outputs_dream_7b_500 / outputs_LLaDA-*
